@@ -24,3 +24,8 @@ yarn-error.log*
 
 /.vscode
 /.wrangler
+
+AGENTS.md
+# local Pages env
+.dev.vars
+.dev.vars.*

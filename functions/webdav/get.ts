@@ -1,22 +1,20 @@
 import { notFound } from "./utils";
 import { RequestHandlerParams } from "./utils";
+import { serveObject } from "../lib/serve";
 
 export async function handleRequestGet({
   bucket,
   path,
   request,
 }: RequestHandlerParams) {
-  const obj = await bucket.get(path, {
-    onlyIf: request.headers,
-    range: request.headers,
+  const isThumbnail = path.startsWith("_$flaredrive$/thumbnails/");
+  const response = await serveObject({
+    request,
+    bucket,
+    key: path,
+    method: "GET",
+    cacheControl: isThumbnail ? "max-age=31536000" : "max-age=0, must-revalidate",
   });
-  if (obj === null) return notFound();
-  if (!("body" in obj))
-    return new Response("Preconditions failed", { status: 412 });
 
-  const headers = new Headers();
-  obj.writeHttpMetadata(headers);
-  if (path.startsWith("_$flaredrive$/thumbnails/"))
-    headers.set("Cache-Control", "max-age=31536000");
-  return new Response(obj.body, { headers });
+  return response ?? notFound();
 }

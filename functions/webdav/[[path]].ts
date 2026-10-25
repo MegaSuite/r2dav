@@ -9,6 +9,7 @@ import { handleRequestPropfind } from "./propfind";
 import { handleRequestPut } from "./put";
 import { RequestHandlerParams } from "./utils";
 import { handleRequestPost } from "./post";
+import { checkBasicAuth } from "../lib/auth";
 
 async function handleRequestOptions() {
   return new Response(null, {
@@ -52,21 +53,8 @@ export const onRequest: PagesFunction<{
     ["GET", "HEAD", "PROPFIND"].includes(request.method);
 
   if (!skipAuth) {
-    if (!env.WEBDAV_USERNAME || !env.WEBDAV_PASSWORD)
-      return new Response("WebDAV protocol is not enabled", { status: 403 });
-
-    const auth = request.headers.get("Authorization");
-    if (!auth) {
-      return new Response("Unauthorized", {
-        status: 401,
-        headers: { "WWW-Authenticate": `Basic realm="WebDAV"` },
-      });
-    }
-    const expectedAuth = `Basic ${btoa(
-      `${env.WEBDAV_USERNAME}:${env.WEBDAV_PASSWORD}`
-    )}`;
-    if (auth !== expectedAuth)
-      return new Response("Unauthorized", { status: 401 });
+    const authError = checkBasicAuth(request, env);
+    if (authError) return authError;
   }
 
   const [bucket, path] = parseBucketPath(context);

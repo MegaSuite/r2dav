@@ -4,6 +4,7 @@ import {
   ROOT_OBJECT,
   WEBDAV_ENDPOINT,
 } from "./utils";
+import { resolveMime } from "../lib/mime";
 
 type DavProperties = {
   creationdate: string | undefined;
@@ -23,7 +24,10 @@ function fromR2Object(object: R2Object | typeof ROOT_OBJECT): DavProperties {
     displayname: object.httpMetadata?.contentDisposition,
     getcontentlanguage: object.httpMetadata?.contentLanguage,
     getcontentlength: object.size.toString(),
-    getcontenttype: object.httpMetadata?.contentType,
+    getcontenttype:
+      object.httpMetadata?.contentType === "application/x-directory"
+        ? "application/x-directory"
+        : resolveMime(object.key, object.httpMetadata?.contentType),
     getetag: object.etag,
     getlastmodified: object.uploaded.toUTCString(),
     resourcetype:

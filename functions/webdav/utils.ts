@@ -28,7 +28,13 @@ export function parseBucketPath(context: any): [R2Bucket, string] {
   const url = new URL(request.url);
 
   const pathSegments = (params.path || []) as String[];
-  const path = decodeURIComponent(pathSegments.join("/"));
+  const joined = pathSegments.join("/");
+  let path = joined;
+  try {
+    path = decodeURIComponent(joined);
+  } catch {
+    // Keep the raw path for malformed escapes; callers validate it.
+  }
   const driveid = url.hostname.replace(/\..*/, "");
 
   return [env[driveid] || env["BUCKET"], path];

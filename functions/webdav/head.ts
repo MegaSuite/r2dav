@@ -1,14 +1,20 @@
 import { notFound } from "./utils";
 import { RequestHandlerParams } from "./utils";
+import { serveObject } from "../lib/serve";
 
 export async function handleRequestHead({
   bucket,
   path,
+  request,
 }: RequestHandlerParams) {
-  const obj = await bucket.head(path);
-  if (obj === null) return notFound();
+  const isThumbnail = path.startsWith("_$flaredrive$/thumbnails/");
+  const response = await serveObject({
+    request,
+    bucket,
+    key: path,
+    method: "HEAD",
+    cacheControl: isThumbnail ? "max-age=31536000" : "max-age=0, must-revalidate",
+  });
 
-  const headers = new Headers();
-  obj.writeHttpMetadata(headers);
-  return new Response(null, { headers });
+  return response ?? notFound();
 }

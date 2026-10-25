@@ -1,57 +1,81 @@
-import { ThemeProvider } from "@emotion/react";
 import {
   createTheme,
   CssBaseline,
   GlobalStyles,
-  Snackbar,
-  Stack,
+  ThemeProvider,
 } from "@mui/material";
-import React, { useState } from "react";
-
-import Header from "./Header";
+import React, { useMemo } from "react";
 import Main from "./Main";
-import ProgressDialog from "./ProgressDialog";
+import ErrorBoundary from "./app/ErrorBoundary";
+import { NotificationsProvider } from "./app/notifications";
+import { PreferencesProvider, useResolvedTheme } from "./app/preferences";
 import { TransferQueueProvider } from "./app/transferQueue";
 
 const globalStyles = (
-  <GlobalStyles styles={{ "html, body, #root": { height: "100%" } }} />
+  <GlobalStyles
+    styles={{
+      "html, body, #root": { height: "100%" },
+      body: { margin: 0, overflow: "hidden" },
+      "code": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+    }}
+  />
 );
 
-const theme = createTheme({
-  palette: { primary: { main: "#f38020" } },
-});
-
-function App() {
-  const [search, setSearch] = useState("");
-  const [showProgressDialog, setShowProgressDialog] = React.useState(false);
-  const [error, setError] = useState<Error | null>(null);
+function ThemedApp() {
+  const mode = useResolvedTheme();
+  const theme = useMemo(
+    () =>
+      createTheme({
+        palette: {
+          mode,
+          primary: { main: "#f38020" },
+          ...(mode === "dark"
+            ? {
+                background: { default: "#0f172a", paper: "#111c2e" },
+                divider: "rgba(148, 163, 184, 0.18)",
+              }
+            : {
+                background: { default: "#f7f8fa", paper: "#ffffff" },
+              }),
+        },
+        shape: { borderRadius: 10 },
+        typography: {
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        },
+        components: {
+          MuiButton: {
+            styleOverrides: {
+              root: { textTransform: "none" },
+            },
+          },
+          MuiTooltip: {
+            defaultProps: { arrow: true },
+          },
+        },
+      }),
+    [mode]
+  );
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
+      <CssBaseline enableColorScheme />
       {globalStyles}
       <TransferQueueProvider>
-        <Stack sx={{ height: "100%" }}>
-          <Header
-            search={search}
-            onSearchChange={(newSearch: string) => setSearch(newSearch)}
-            setShowProgressDialog={setShowProgressDialog}
-          />
-          <Main search={search} onError={setError} />
-        </Stack>
-        <Snackbar
-          autoHideDuration={5000}
-          open={Boolean(error)}
-          message={error?.message}
-          onClose={() => setError(null)}
-        />
-        <ProgressDialog
-          open={showProgressDialog}
-          onClose={() => setShowProgressDialog(false)}
-        />
+        <NotificationsProvider>
+          <ErrorBoundary>
+            <Main />
+          </ErrorBoundary>
+        </NotificationsProvider>
       </TransferQueueProvider>
     </ThemeProvider>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <PreferencesProvider>
+      <ThemedApp />
+    </PreferencesProvider>
+  );
+}

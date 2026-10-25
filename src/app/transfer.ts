@@ -1,59 +1,28 @@
 import pLimit from "p-limit";
 
-import { encodeKey, FileItem } from "../FileGrid";
-import { TransferTask } from "./transferQueue";
+import { encodeKey, type TransferTask } from "./types";
+import { resolveMime } from "./mime";
 
 const WEBDAV_ENDPOINT = "/webdav/";
-
-export async function fetchPath(path: string) {
-  const res = await fetch(`${WEBDAV_ENDPOINT}${encodeKey(path)}`, {
-    method: "PROPFIND",
-    headers: { Depth: "1" },
-  });
-
-  if (!res.ok) throw new Error("Failed to fetch");
-  if (!res.headers.get("Content-Type")?.includes("application/xml"))
-    throw new Error("Invalid response");
-
-  const parser = new DOMParser();
-  const text = await res.text();
-  const document = parser.parseFromString(text, "application/xml");
-  const items: FileItem[] = Array.from(document.querySelectorAll("response"))
-    .filter(
-      (response) =>
-        decodeURIComponent(
-          response.querySelector("href")?.textContent ?? ""
-        ).slice(WEBDAV_ENDPOINT.length) !== path.replace(/\/$/, "")
-    )
-    .map((response) => {
-      const href = response.querySelector("href")?.textContent;
-      if (!href) throw new Error("Invalid response");
-      const contentType = response.querySelector("getcontenttype")?.textContent;
-      const size = response.querySelector("getcontentlength")?.textContent;
-      const lastModified =
-        response.querySelector("getlastmodified")?.textContent;
-      const thumbnail = response.getElementsByTagNameNS(
-        "flaredrive",
-        "thumbnail"
-      )[0]?.textContent;
-      return {
-        key: decodeURI(href).replace(/^\/webdav\//, ""),
-        size: size ? Number(size) : 0,
-        uploaded: lastModified!,
-        httpMetadata: { contentType: contentType! },
-        customMetadata: { thumbnail },
-      } as FileItem;
-    });
-  return items;
-}
-
 const THUMBNAIL_SIZE = 144;
 
-export async function generateThumbnail(file: File) {
+export const SIZE_LIMIT = 100 * 1000 * 1000; // 100MB
+
+class UploadError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "UploadError";
+    this.status = status;
+  }
+}
+
+export async function generateThumbnail(file: File): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = THUMBNAIL_SIZE;
   canvas.height = THUMBNAIL_SIZE;
-  var ctx = canvas.getContext("2d")!;
+  const ctx = canvas.getContext("2d")!;
 
   if (file.type.startsWith("image/")) {
     const image = await new Promise<HTMLImageElement>((resolve) => {
@@ -63,19 +32,17 @@ export async function generateThumbnail(file: File) {
     });
     ctx.drawImage(image, 0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
   } else if (file.type === "video/mp4") {
-    // Generate thumbnail from video
-    const video = await new Promise<HTMLVideoElement>(
-      async (resolve, reject) => {
-        const video = document.createElement("video");
-        video.muted = true;
-        video.src = URL.createObjectURL(file);
-        setTimeout(() => reject(new Error("Video load timeout")), 2000);
-        await video.play();
+    const video = await new Promise<HTMLVideoElement>((resolve, reject) => {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.src = URL.createObjectURL(file);
+      setTimeout(() => reject(new Error("Video load timeout")), 2000);
+      video.play().then(() => {
         video.pause();
         video.currentTime = 0;
         resolve(video);
-      }
-    );
+      }, reject);
+    });
     ctx.drawImage(video, 0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
   } else if (file.type === "application/pdf") {
     const pdfjsLib = await import(
@@ -87,65 +54,109 @@ export async function generateThumbnail(file: File) {
     const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
     const page = await pdf.getPage(1);
     const { width, height } = page.getViewport({ scale: 1 });
-    var scale = THUMBNAIL_SIZE / Math.max(width, height);
+    const scale = THUMBNAIL_SIZE / Math.max(width, height);
     const viewport = page.getViewport({ scale });
-    const renderContext = { canvasContext: ctx, viewport };
-    await page.render(renderContext).promise;
+    await page.render({ canvasContext: ctx, viewport }).promise;
   }
 
-  const thumbnailBlob = await new Promise<Blob>((resolve) =>
-    canvas.toBlob((blob) => resolve(blob!))
-  );
-
-  return thumbnailBlob;
+  return new Promise<Blob>((resolve) => {
+    canvas.toBlob((blob) => resolve(blob!), "image/png");
+  });
 }
 
-export async function blobDigest(blob: Blob) {
+export async function blobDigest(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-1", await blob.arrayBuffer());
-  const digestArray = Array.from(new Uint8Array(digest));
-  const digestHex = digestArray
-    .map((b) => b.toString(16).padStart(2, "0"))
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-  return digestHex;
 }
-
-export const SIZE_LIMIT = 100 * 1000 * 1000; // 100MB
 
 function xhrFetch(
-  url: RequestInfo | URL,
+  url: string,
   requestInit: RequestInit & {
-    onUploadProgress?: (progressEvent: ProgressEvent) => void;
+    onUploadProgress?: (loaded: number, total: number) => void;
   }
-) {
+): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.upload.onprogress = requestInit.onUploadProgress ?? null;
-    xhr.open(
-      requestInit.method ?? "GET",
-      url instanceof Request ? url.url : url
-    );
+    xhr.upload.onprogress = (event) => {
+      requestInit.onUploadProgress?.(event.loaded, event.total);
+    };
+    xhr.open(requestInit.method ?? "GET", url);
     const headers = new Headers(requestInit.headers);
     headers.forEach((value, key) => xhr.setRequestHeader(key, value));
     xhr.onload = () => {
-      const headers = xhr
+      const responseHeaders = xhr
         .getAllResponseHeaders()
         .trim()
         .split("\r\n")
+        .filter(Boolean)
         .reduce((acc, header) => {
-          const [key, value] = header.split(": ");
-          acc[key] = value;
+          const separator = header.indexOf(": ");
+          if (separator > 0) {
+            acc[header.slice(0, separator)] = header.slice(separator + 2);
+          }
           return acc;
         }, {} as Record<string, string>);
-      resolve(new Response(xhr.responseText, { status: xhr.status, headers }));
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(
+          new Response(xhr.responseText, {
+            status: xhr.status,
+            headers: responseHeaders,
+          })
+        );
+      } else {
+        reject(
+          new UploadError(
+            xhr.responseText || `Upload failed (${xhr.status})`,
+            xhr.status
+          )
+        );
+      }
     };
-    xhr.onerror = reject;
+    xhr.onerror = () => reject(new UploadError("Network error", 0));
+    xhr.onabort = () => reject(new UploadError("Upload aborted", 0));
+
     if (
       requestInit.body instanceof Blob ||
       typeof requestInit.body === "string"
     ) {
       xhr.send(requestInit.body);
+    } else {
+      xhr.send();
     }
   });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function uploadPartWithRetry(
+  url: string,
+  chunk: Blob,
+  headers: Record<string, string>,
+  onProgress: (loaded: number, total: number) => void
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await xhrFetch(url, {
+        method: "PUT",
+        headers,
+        body: chunk,
+        onUploadProgress: onProgress,
+      });
+    } catch (error) {
+      lastError = error;
+      const status = error instanceof UploadError ? error.status : 0;
+      const retryable = status === 0 || status === 429 || status >= 500;
+      if (!retryable || attempt === 2) throw error;
+      await delay(500 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 
 export async function multipartUpload(
@@ -153,98 +164,77 @@ export async function multipartUpload(
   file: File,
   options?: {
     headers?: Record<string, string>;
-    onUploadProgress?: (progressEvent: {
-      loaded: number;
-      total: number;
-    }) => void;
+    onUploadProgress?: (loaded: number, total: number) => void;
   }
-) {
-  const headers = options?.headers || {};
-  headers["content-type"] = file.type;
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...(options?.headers ?? {}),
+    "content-type": resolveMime(key, file.type),
+  };
 
-  const uploadResponse = await fetch(`/webdav/${encodeKey(key)}?uploads`, {
+  const createResponse = await fetch(`/webdav/${encodeKey(key)}?uploads`, {
     headers,
     method: "POST",
   });
-  const { uploadId } = await uploadResponse.json<{ uploadId: string }>();
-  const totalChunks = Math.ceil(file.size / SIZE_LIMIT);
-
-  const limit = pLimit(2);
-  const parts = Array.from({ length: totalChunks }, (_, i) => i + 1);
-  const partsLoaded = Array.from({ length: totalChunks + 1 }, () => 0);
-  const promises = parts.map((i) =>
-    limit(async () => {
-      const chunk = file.slice((i - 1) * SIZE_LIMIT, i * SIZE_LIMIT);
-      const searchParams = new URLSearchParams({
-        partNumber: i.toString(),
-        uploadId,
-      });
-      const uploadUrl = `/webdav/${encodeKey(key)}?${searchParams}`;
-      if (i === limit.concurrency)
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const uploadPart = () =>
-        xhrFetch(uploadUrl, {
-          method: "PUT",
-          headers,
-          body: chunk,
-          onUploadProgress: (progressEvent) => {
-            partsLoaded[i] = progressEvent.loaded;
-            options?.onUploadProgress?.({
-              loaded: partsLoaded.reduce((a, b) => a + b),
-              total: file.size,
-            });
-          },
-        });
-
-      const retryReducer = (acc: Promise<Response>) =>
-        acc
-          .then((res) => {
-            const retryAfter = res.headers.get("retry-after");
-            if (!retryAfter) return res;
-            return uploadPart();
-          })
-          .catch(uploadPart);
-      const response = await [1, 2].reduce(retryReducer, uploadPart());
-      return { partNumber: i, etag: response.headers.get("etag")! };
-    })
-  );
-  const uploadedParts = await Promise.all(promises);
-  const completeParams = new URLSearchParams({ uploadId });
-  const response = await fetch(`/webdav/${encodeKey(key)}?${completeParams}`, {
-    method: "POST",
-    body: JSON.stringify({ parts: uploadedParts }),
-  });
-  if (!response.ok) throw new Error(await response.text());
-  return response;
-}
-
-export async function copyPaste(source: string, target: string, move = false) {
-  const uploadUrl = `${WEBDAV_ENDPOINT}${encodeKey(source)}`;
-  const destinationUrl = new URL(
-    `${WEBDAV_ENDPOINT}${encodeKey(target)}`,
-    window.location.href
-  );
-  await fetch(uploadUrl, {
-    method: move ? "MOVE" : "COPY",
-    headers: { Destination: destinationUrl.href },
-  });
-}
-
-export async function createFolder(cwd: string) {
-  try {
-    const folderName = window.prompt("Folder name");
-    if (!folderName) return;
-    if (folderName.includes("/")) {
-      window.alert("Invalid folder name");
-      return;
-    }
-    const folderKey = `${cwd}${folderName}`;
-    const uploadUrl = `${WEBDAV_ENDPOINT}${encodeKey(folderKey)}`;
-    await fetch(uploadUrl, { method: "MKCOL" });
-  } catch (error) {
-    console.log(`Create folder failed`);
+  if (!createResponse.ok) {
+    throw new UploadError(
+      (await createResponse.text()) || "Could not start upload",
+      createResponse.status
+    );
   }
+  const { uploadId } = (await createResponse.json()) as { uploadId: string };
+
+  const totalChunks = Math.ceil(file.size / SIZE_LIMIT);
+  const limit = pLimit(2);
+  const parts = Array.from({ length: totalChunks }, (_, index) => index + 1);
+  const partsLoaded = Array.from({ length: totalChunks + 1 }, () => 0);
+
+  const uploadedParts = await Promise.all(
+    parts.map((partNumber) =>
+      limit(async () => {
+        const chunk = file.slice(
+          (partNumber - 1) * SIZE_LIMIT,
+          partNumber * SIZE_LIMIT
+        );
+        const searchParams = new URLSearchParams({
+          partNumber: partNumber.toString(),
+          uploadId,
+        });
+        const uploadUrl = `/webdav/${encodeKey(key)}?${searchParams}`;
+        const response = await uploadPartWithRetry(
+          uploadUrl,
+          chunk,
+          headers,
+          (loaded) => {
+            partsLoaded[partNumber] = loaded;
+            options?.onUploadProgress?.(
+              partsLoaded.reduce((total, value) => total + value, 0),
+              file.size
+            );
+          }
+        );
+        const etag = response.headers.get("etag");
+        if (!etag) throw new UploadError("Missing part ETag", response.status);
+        return { partNumber, etag };
+      })
+    )
+  );
+
+  const completeParams = new URLSearchParams({ uploadId });
+  const completeResponse = await fetch(
+    `/webdav/${encodeKey(key)}?${completeParams}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ parts: uploadedParts }),
+    }
+  );
+  if (!completeResponse.ok) {
+    throw new UploadError(
+      (await completeResponse.text()) || "Could not complete upload",
+      completeResponse.status
+    );
+  }
+  return completeResponse;
 }
 
 export async function processTransferTask({
@@ -252,12 +242,12 @@ export async function processTransferTask({
   onTaskProgress,
 }: {
   task: TransferTask;
-  onTaskProgress?: (event: { loaded: number; total: number }) => void;
-}) {
+  onTaskProgress?: (loaded: number, total: number) => void;
+}): Promise<Response | void> {
   const { remoteKey, file } = task;
   if (task.type !== "upload" || !file) throw new Error("Invalid task");
-  let thumbnailDigest = null;
 
+  let thumbnailDigest: string | null = null;
   if (
     file.type.startsWith("image/") ||
     file.type === "video/mp4" ||
@@ -266,36 +256,38 @@ export async function processTransferTask({
     try {
       const thumbnailBlob = await generateThumbnail(file);
       const digestHex = await blobDigest(thumbnailBlob);
-
       const thumbnailUploadUrl = `/webdav/_$flaredrive$/thumbnails/${digestHex}.png`;
       try {
-        await fetch(thumbnailUploadUrl, {
+        const response = await fetch(thumbnailUploadUrl, {
           method: "PUT",
           body: thumbnailBlob,
         });
+        if (!response.ok) throw new Error("Thumbnail upload failed");
         thumbnailDigest = digestHex;
-      } catch (error) {
+      } catch {
         console.log(`Upload ${digestHex}.png failed`);
       }
-    } catch (error) {
-      console.log(`Generate thumbnail failed`);
+    } catch {
+      console.log("Generate thumbnail failed");
     }
   }
 
-  const headers: { "fd-thumbnail"?: string } = {};
+  const headers: Record<string, string> = {
+    "content-type": resolveMime(remoteKey, file.type),
+  };
   if (thumbnailDigest) headers["fd-thumbnail"] = thumbnailDigest;
+
   if (file.size >= SIZE_LIMIT) {
-    return await multipartUpload(remoteKey, file, {
+    return multipartUpload(remoteKey, file, {
       headers,
-      onUploadProgress: onTaskProgress,
-    });
-  } else {
-    const uploadUrl = `${WEBDAV_ENDPOINT}${encodeKey(remoteKey)}`;
-    return await xhrFetch(uploadUrl, {
-      method: "PUT",
-      headers,
-      body: file,
       onUploadProgress: onTaskProgress,
     });
   }
+
+  return xhrFetch(`${WEBDAV_ENDPOINT}${encodeKey(remoteKey)}`, {
+    method: "PUT",
+    headers,
+    body: file,
+    onUploadProgress: onTaskProgress,
+  });
 }

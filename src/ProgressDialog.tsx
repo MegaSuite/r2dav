@@ -1,89 +1,131 @@
 import {
-  CircularProgress,
+  Box,
+  Button,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
-  Tab,
-  Tabs,
   Tooltip,
   Typography,
 } from "@mui/material";
-import { useMemo, useState } from "react";
-import { TransferTask, useTransferQueue } from "./app/transferQueue";
-import { humanReadableSize } from "./app/utils";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import ReplayIcon from "@mui/icons-material/Replay";
+import React from "react";
 import {
-  CheckCircleOutline as CheckCircleOutlineIcon,
-  ErrorOutline as ErrorOutlineIcon,
-} from "@mui/icons-material";
+  useTransferActions,
+  useTransferQueue,
+} from "./app/transferQueue";
+import { humanReadableSize } from "./app/utils";
 
-function ProgressDialog({
+export default function ProgressDialog({
   open,
   onClose,
 }: {
   open: boolean;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState(0);
-  const transferQueue: TransferTask[] = useTransferQueue();
-
-  const tasks = useMemo(() => {
-    const taskType = tab === 0 ? "download" : "upload";
-    return Object.values(transferQueue).filter(
-      (task) => task.type === taskType
-    );
-  }, [tab, transferQueue]);
+  const tasks = useTransferQueue();
+  const { retry, remove, clearCompleted } = useTransferActions();
+  const completed = tasks.filter((task) => task.status === "completed").length;
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>Progress</DialogTitle>
-      <Tabs
-        value={tab}
-        onChange={(_, newTab) => setTab(newTab)}
-        sx={{ "& .MuiTab-root": { flexBasis: "50%" } }}
-      >
-        <Tab label="Downloads" />
-        <Tab label="Uploads" />
-      </Tabs>
-      {tasks.length === 0 ? (
-        <DialogContent>
-          <Typography textAlign="center" color="text.secondary">
-            No tasks
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>Uploads</DialogTitle>
+      <DialogContent sx={{ p: 0 }}>
+        {tasks.length === 0 ? (
+          <Typography color="text.secondary" textAlign="center" sx={{ py: 5 }}>
+            No upload tasks
           </Typography>
-        </DialogContent>
-      ) : (
-        <DialogContent sx={{ padding: 0 }}>
-          <List>
-            {tasks.map((task) => (
-              <ListItem key={task.name}>
-                <ListItemText
-                  primary={task.name}
-                  secondary={`${humanReadableSize(
-                    task.loaded
-                  )} / ${humanReadableSize(task.total)}`}
-                />
-                {task.status === "failed" ? (
-                  <Tooltip title={task.error.message}>
-                    <ErrorOutlineIcon color="error" />
-                  </Tooltip>
-                ) : task.status === "completed" ? (
-                  <CheckCircleOutlineIcon color="success" />
-                ) : task.status === "in-progress" ? (
-                  <CircularProgress
-                    variant="determinate"
-                    size={24}
-                    value={(task.loaded / task.total) * 100}
+        ) : (
+          <List disablePadding>
+            {tasks.map((task) => {
+              const progress =
+                task.total > 0
+                  ? Math.min(100, Math.round((task.loaded / task.total) * 100))
+                  : 0;
+              return (
+                <ListItem
+                  key={task.id}
+                  divider
+                  secondaryAction={
+                    <Box sx={{ display: "flex", gap: 0.25 }}>
+                      {task.status === "failed" && (
+                        <Tooltip title="Retry">
+                          <IconButton
+                            edge="end"
+                            aria-label="Retry upload"
+                            onClick={() => retry(task.id)}
+                          >
+                            <ReplayIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {task.status !== "in-progress" && (
+                        <Tooltip title="Remove from list">
+                          <IconButton
+                            edge="end"
+                            aria-label="Remove task"
+                            onClick={() => remove(task.id)}
+                          >
+                            <DeleteOutlineIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
+                  }
+                >
+                  <ListItemText
+                    primary={task.name}
+                    secondary={
+                      <>
+                        {task.status === "failed" ? (
+                          <Typography component="span" variant="body2" color="error">
+                            {task.error?.message || "Upload failed"}
+                          </Typography>
+                        ) : (
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            {humanReadableSize(task.loaded)} /{" "}
+                            {humanReadableSize(task.total)}
+                            {task.status === "completed" ? " · Completed" : ""}
+                          </Typography>
+                        )}
+                        {(task.status === "in-progress" || task.status === "pending") && (
+                          <LinearProgress
+                            variant="determinate"
+                            value={task.status === "pending" ? 0 : progress}
+                            sx={{ mt: 1, borderRadius: 1 }}
+                          />
+                        )}
+                      </>
+                    }
                   />
-                ) : null}
-              </ListItem>
-            ))}
+                  {task.status === "completed" && (
+                    <CheckCircleOutlineIcon color="success" sx={{ ml: 1 }} />
+                  )}
+                  {task.status === "failed" && (
+                    <ErrorOutlineIcon color="error" sx={{ ml: 1 }} />
+                  )}
+                </ListItem>
+              );
+            })}
           </List>
-        </DialogContent>
-      )}
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => clearCompleted()} disabled={completed === 0}>
+          Clear completed
+        </Button>
+        <Button variant="contained" onClick={onClose}>
+          Close
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }
-
-export default ProgressDialog;

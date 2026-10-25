@@ -1,4 +1,5 @@
 import { RequestHandlerParams, ROOT_OBJECT } from "./utils";
+import { normalizedHttpMetadata } from "../lib/upload";
 
 async function handleRequestPutMultipart({
   bucket,
@@ -51,7 +52,7 @@ export async function handleRequestPut({
 
   const result = await bucket.put(path, request.body, {
     onlyIf: request.headers,
-    httpMetadata: request.headers,
+    httpMetadata: normalizedHttpMetadata(request, path),
     customMetadata,
   });
 

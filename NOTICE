@@ -1,0 +1,7 @@
+r2dav is derived from FlareDrive (https://github.com/longern/FlareDrive),
+Copyright (c) Siyu Long, licensed under the MIT License.
+
+WebDAV implementation portions are based on r2-webdav
+(https://github.com/abersheeran/r2-webdav).
+
+The original MIT license notice is retained in LICENSE.

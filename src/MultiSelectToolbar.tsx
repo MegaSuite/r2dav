@@ -1,84 +1,116 @@
-import React, { useState } from "react";
-import { IconButton, Menu, MenuItem, Slide, Toolbar } from "@mui/material";
 import {
-  Close as CloseIcon,
-  Delete as DeleteIcon,
-  Download as DownloadIcon,
-  MoreHoriz as MoreHorizIcon,
-} from "@mui/icons-material";
+  Box,
+  Button,
+  Divider,
+  IconButton,
+  Paper,
+  Slide,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import DeleteIcon from "@mui/icons-material/Delete";
+import DownloadIcon from "@mui/icons-material/Download";
+import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
+import ShareIcon from "@mui/icons-material/Share";
+import React from "react";
+import { isDirectory, type FileItem } from "./app/types";
 
-function MultiSelectToolbar({
-  multiSelected,
+export default function MultiSelectToolbar({
+  selected,
   onClose,
   onDownload,
   onRename,
   onDelete,
   onShare,
 }: {
-  multiSelected: string[] | null;
+  selected: FileItem[];
   onClose: () => void;
   onDownload: () => void;
   onRename: () => void;
   onDelete: () => void;
   onShare: () => void;
 }) {
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const count = selected.length;
+  const single = count === 1 ? selected[0] : null;
+  const singleFile = single && !isDirectory(single) ? single : null;
 
   return (
-    <Slide direction="up" in={multiSelected !== null}>
-      <Toolbar
+    <Slide direction="up" in={count > 0} mountOnEnter unmountOnExit>
+      <Paper
+        elevation={8}
         sx={{
           position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 100,
-          backgroundColor: (theme) => theme.palette.background.paper,
-          borderTop: "1px solid lightgray",
-          justifyContent: "space-evenly",
+          bottom: { xs: 0, md: 24 },
+          left: { xs: 0, md: "50%" },
+          right: { xs: 0, md: "auto" },
+          transform: { md: "translateX(-50%)" },
+          zIndex: (theme) => theme.zIndex.fab,
+          borderRadius: { xs: "16px 16px 0 0", md: 999 },
+          border: 1,
+          borderColor: "divider",
+          px: 1,
+          py: 0.5,
         }}
       >
-        <IconButton color="primary" onClick={onClose}>
-          <CloseIcon />
-        </IconButton>
-        <IconButton
-          color="primary"
-          disabled={
-            multiSelected?.length !== 1 || multiSelected[0].endsWith("/")
-          }
-          onClick={onDownload}
-        >
-          <DownloadIcon />
-        </IconButton>
-        <IconButton color="primary" onClick={onDelete}>
-          <DeleteIcon />
-        </IconButton>
-        <IconButton
-          color="primary"
-          disabled={
-            multiSelected?.length !== 1 || multiSelected[0].endsWith("/")
-          }
-          onClick={(e) => setAnchorEl(e.currentTarget)}
-        >
-          <MoreHorizIcon />
-        </IconButton>
-        {multiSelected?.length && (
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={() => setAnchorEl(null)}
-          >
-            {multiSelected.length === 1 && (
-              <React.Fragment>
-                <MenuItem onClick={onRename}>Rename</MenuItem>
-                <MenuItem onClick={onShare}>Share</MenuItem>
-              </React.Fragment>
-            )}
-          </Menu>
-        )}
-      </Toolbar>
+        <Stack direction="row" alignItems="center" spacing={0.5}>
+          <IconButton aria-label="Cancel selection" onClick={onClose}>
+            <CloseIcon />
+          </IconButton>
+          <Typography variant="body2" fontWeight={600} sx={{ px: 0.5, whiteSpace: "nowrap" }}>
+            {count} selected
+          </Typography>
+          <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+          <Tooltip title={singleFile ? "Download" : "Select one file"}>
+            <span>
+              <IconButton
+                aria-label="Download"
+                color="primary"
+                disabled={!singleFile}
+                onClick={onDownload}
+              >
+                <DownloadIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={singleFile ? "Share" : "Select one file"}>
+            <span>
+              <IconButton
+                aria-label="Share"
+                color="primary"
+                disabled={!singleFile}
+                onClick={onShare}
+              >
+                <ShareIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={single ? "Rename" : "Select one item"}>
+            <span>
+              <IconButton
+                aria-label="Rename"
+                color="primary"
+                disabled={!single}
+                onClick={onRename}
+                sx={{ display: { xs: "none", sm: "inline-flex" } }}
+              >
+                <DriveFileRenameOutlineIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Delete">
+            <IconButton aria-label="Delete" color="error" onClick={onDelete}>
+              <DeleteIcon />
+            </IconButton>
+          </Tooltip>
+          <Box sx={{ display: { xs: "none", md: "block" }, pl: 1 }}>
+            <Button size="small" onClick={onClose}>
+              Done
+            </Button>
+          </Box>
+        </Stack>
+      </Paper>
     </Slide>
   );
 }
-
-export default MultiSelectToolbar;
