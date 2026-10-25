@@ -1,0 +1,7 @@
+# Copy to .dev.vars for local `wrangler pages dev`.
+WEBDAV_USERNAME=admin
+WEBDAV_PASSWORD=change-me
+# Optional: set to 1 to allow unauthenticated GET/HEAD/PROPFIND on /webdav.
+WEBDAV_PUBLIC_READ=0
+# Generate with: openssl rand -base64 32
+SHARE_SECRET=change-me-to-a-long-random-secret
