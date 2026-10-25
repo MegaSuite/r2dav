@@ -33,7 +33,6 @@ import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutli
 import EditIcon from "@mui/icons-material/Edit";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import RefreshIcon from "@mui/icons-material/Refresh";
 import ShareIcon from "@mui/icons-material/Share";
 import ViewListIcon from "@mui/icons-material/ViewList";
 import ViewModuleIcon from "@mui/icons-material/ViewModule";
@@ -637,15 +636,6 @@ export default function Main() {
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="Refresh">
-          <IconButton
-            size="small"
-            aria-label="Refresh"
-            onClick={() => void load()}
-          >
-            <RefreshIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
       </Box>
 
       {clipboard && (

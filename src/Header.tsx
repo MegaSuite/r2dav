@@ -82,17 +82,6 @@ export default function Header({
         </ListItemIcon>
         <ListItemText>New text file</ListItemText>
       </MenuItem>
-      <MenuItem
-        onClick={() => {
-          setMenuAnchor(null);
-          onOpenProgress();
-        }}
-      >
-        <ListItemIcon>
-          <CloudUploadIcon fontSize="small" />
-        </ListItemIcon>
-        <ListItemText>Upload progress</ListItemText>
-      </MenuItem>
       <Divider />
       <MenuItem
         onClick={() => {
@@ -210,15 +199,6 @@ export default function Header({
           >
             Upload
           </Button>
-          <Tooltip title="New folder">
-            <IconButton
-              aria-label="New folder"
-              onClick={onCreateFolder}
-              sx={{ display: { xs: "none", sm: "inline-flex" } }}
-            >
-              <CreateNewFolderIcon />
-            </IconButton>
-          </Tooltip>
           <Tooltip title="Refresh">
             <IconButton aria-label="Refresh" onClick={onRefresh}>
               <RefreshIcon />
@@ -229,11 +209,6 @@ export default function Header({
               <Badge badgeContent={activeUploads} color="primary" max={99}>
                 <CloudUploadIcon />
               </Badge>
-            </IconButton>
-          </Tooltip>
-          <Tooltip title={resolvedTheme === "dark" ? "Light theme" : "Dark theme"}>
-            <IconButton aria-label="Toggle theme" onClick={onToggleTheme}>
-              {resolvedTheme === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
             </IconButton>
           </Tooltip>
           <IconButton
