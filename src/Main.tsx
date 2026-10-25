@@ -62,6 +62,7 @@ import {
   webdavUrl,
 } from "./app/api";
 import { copyText } from "./app/clipboard";
+import { collectDroppedItems, ensureDroppedDirectories } from "./app/drop";
 import { isTextLike } from "./app/mime";
 import { useNotify } from "./app/notifications";
 import { usePreferences, useResolvedTheme } from "./app/preferences";
@@ -504,16 +505,21 @@ export default function Main() {
     setClipboardFor,
   ]);
 
-  const onDrop = (event: React.DragEvent) => {
+  const onDrop = async (event: React.DragEvent) => {
     event.preventDefault();
     dragCounter.current = 0;
     setDragging(false);
-    const dropped = Array.from(event.dataTransfer.files);
-    if (!dropped.length) {
-      notify("Drop files (folder drag-and-drop is not supported yet).", "info");
-      return;
+    try {
+      const dropped = await collectDroppedItems(event.dataTransfer, cwd);
+      if (!dropped.length) {
+        notify("No files were found in the drop.", "info");
+        return;
+      }
+      await ensureDroppedDirectories(dropped);
+      uploadEnqueue(...dropped);
+    } catch (error) {
+      notify(apiErrorMessage(error), "error");
     }
-    uploadEnqueue(...dropped.map((file) => ({ file, basedir: cwd })));
   };
 
   const emptyMessage = search
@@ -697,7 +703,7 @@ export default function Main() {
           dragCounter.current = Math.max(0, dragCounter.current - 1);
           if (dragCounter.current === 0) setDragging(false);
         }}
-        onDrop={onDrop}
+        onDrop={(event) => void onDrop(event)}
       >
         {dragging && (
           <Box
