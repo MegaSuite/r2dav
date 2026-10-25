@@ -3,7 +3,7 @@
 > 状态：待评审 / 可执行  
 > 依据：`AGENTS.md`、当前代码、Cloudflare Pages 实际配置  
 > 最后更新：2026-10-25  
-> 实施状态：Phase 0–5 已在本地完成并通过类型检查、构建、直链脚本和浏览器测试；Phase 6（新仓库、新 Pages 项目、`dav.fooa.de` 迁移、删除旧资源）待执行。  
+> 实施状态：Phase 0–6 已完成。新仓库 `MegaSuite/r2dav`、新 Pages 项目 `r2dav`、自定义域名 `dav.fooa.de` 已上线；旧 `MegaSuite/FlareDrive` 仓库和旧 `flaredrive` Pages 项目已删除。  
 > 原则：先补核心能力，再做界面重构；保持 WebDAV 兼容；每阶段可独立验收、独立回滚。
 
 ---
@@ -641,6 +641,16 @@ type ViewMode = "list" | "grid";
 7. 验证通过后，按用户确认删除旧 fork `MegaSuite/FlareDrive` 和旧 Pages 项目 `flaredrive`。
 8. 打 tag，更新 README 中的部署链接和仓库地址。
 9. 本地目录 `/root/FlareDrive` 的重命名放到最后，避免当前会话工作目录失效；可手动 `mv` 为 `/root/r2dav`。
+
+### 6.4 Phase 6 完成记录
+
+- 新仓库：`MegaSuite/r2dav`（非 fork）。
+- 新 Pages 项目：`r2dav`，生产域名 `https://r2dav.pages.dev`，自定义域名 `https://dav.fooa.de`（活动，SSL 已启用）。
+- R2 绑定：`BUCKET` → `flaredrive` 桶。
+- 环境变量：`WEBDAV_USERNAME`、`WEBDAV_PASSWORD`、`SHARE_SECRET`（Production）。
+- 生产验证：首页、PROPFIND/WebDAV、上传/删除、分享对话框、`.yaml` 直链、`.ics` 直链、自定义域名直链均通过。
+- 旧 Pages 项目 `flaredrive` 已删除；旧 GitHub 仓库 `MegaSuite/FlareDrive` 已删除。
+- 自动部署：从 `MegaSuite/r2dav` 的 `main` 分支构建并发布。
 
 ---
 

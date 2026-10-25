@@ -61,5 +61,10 @@
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "@cloudflare/workers-types": "^4.20240620.0",
     "mime-db": "^1.54.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MegaSuite/r2dav.git"
+  },
+  "homepage": "https://dav.fooa.de"
 }
