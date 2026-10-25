@@ -56,77 +56,6 @@ After adding or changing variables, redeploy the project.
 
 Add a custom domain in **Pages → your project → Custom domains**. Direct links use the request origin, so they automatically use the custom domain.
 
-## Signed direct links
-
-### From the UI
-
-Open the menu for a file and choose **Share / direct link**. Choose an expiry:
-
-- Permanent
-- 1 hour
-- 1 day
-- 7 days
-- 30 days
-- Custom number of days
-
-The dialog provides a copyable URL and a QR code. Folder sharing is not supported in v1.
-
-### URL format
-
-```text
-https://<your-domain>/d/<path>?sign=<signature>:<expires>
-```
-
-- `expires` is a Unix timestamp in seconds. `0` means the link never expires.
-- The signature is HMAC-SHA256 over `<path>:<expires>` and is URL-safe Base64 encoded.
-- The link grants read access to one file until it expires. Anyone with the link can read that file; it is a bearer capability URL.
-
-### Create a link with the API
-
-The API uses the same HTTP Basic credentials as WebDAV:
-
-```bash
-curl -u "$WEBDAV_USERNAME:$WEBDAV_PASSWORD" \
-  -H 'Content-Type: application/json' \
-  -d '{"path":"config/proxies.yaml","expiresIn":0}' \
-  https://your-domain.com/api/share
-```
-
-`expiresIn` is in seconds: `0` for permanent, otherwise up to 365 days.
-
-Response:
-
-```json
-{
-  "url": "https://your-domain.com/d/config/proxies.yaml?sign=...:0",
-  "path": "config/proxies.yaml",
-  "expiresAt": null
-}
-```
-
-### Clash example
-
-```yaml
-proxy-providers:
-  r2dav:
-    type: http
-    url: "https://your-domain.com/d/config/proxies.yaml?sign=...:0"
-    interval: 86400
-    path: ./proxies.yaml
-    health-check:
-      enable: true
-      url: https://www.gstatic.com/generate_204
-      interval: 300
-```
-
-### Calendar example
-
-Upload a `.ics` file, create a permanent direct link, and subscribe to it in your calendar app. The endpoint returns `Content-Type: text/calendar; charset=utf-8` and supports ETag revalidation, so calendar clients can refresh it.
-
-### Revoking links
-
-Signed links are stateless. To invalidate all existing links, change `SHARE_SECRET` and redeploy. Individual link revocation would require additional state and is not part of v1.
-
 ## WebDAV
 
 Use any WebDAV client with:
@@ -159,15 +88,6 @@ npm run build
 ```
 
 `npm run gen:mime` regenerates `src/shared/mime-map.ts` and `functions/lib/mime-map.ts` from `mime-db`.
-
-## Deployment
-
-Cloudflare Pages can build directly from Git. You can also deploy with Wrangler:
-
-```bash
-npm run build
-npx wrangler pages deploy build --project-name r2dav
-```
 
 ## Limits and notes
 
